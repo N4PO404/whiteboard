@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenBoard Infinite Whiteboard Pro</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        #viewport {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            cursor: default;
+        }
+        #paintCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            touch-action: none;
+        }
+        #domElementsLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+        .canvas-dom-item {
+            position: absolute;
+            pointer-events: auto;
+            transform-origin: 0 0;
+        }
+        .sticky-note {
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            transition: box-shadow 0.2s;
+        }
+        .sticky-note:focus-within {
+            box-shadow: 0 20px 30px -10px rgba(0,0,0,0.5), 0 0 0 2px #3b82f6;
+        }
+        .sticky-note textarea::-webkit-scrollbar {
+            width: 4px;
+        }
+        .sticky-note textarea::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.2);
+            border-radius: 4px;
+        }
+        .tool-btn {
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        .tool-btn.active {
+            background-color: #3b82f6 !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+        }
+        .glass-panel {
+            background: rgba(24, 32, 47, 0.88);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.15s, border-color 0.15s;
+            border: 2px solid transparent;
+        }
+        .color-swatch:hover {
+            transform: scale(1.15);
+        }
+        .color-swatch.selected {
+            border-color: #ffffff;
+            transform: scale(1.15);
+            box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .keybind-badge {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            font-size: 8px;
+            font-weight: 700;
+            background: rgba(0, 0, 0, 0.5);
+            color: #cbd5e1;
+            padding: 1px 3px;
+            border-radius: 4px;
+            pointer-events: none;
+            text-transform: uppercase;
+            max-width: 32px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .recording-pulse {
+            animation: pulse-ring 1.2s infinite;
+        }
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="select-none overflow-hidden text-slate-100">
+
+    <div id="viewport">
+        <canvas id="paintCanvas"></canvas>
+        <div id="domElementsLayer"></div>
+    </div>
+
+    <!-- Main Toolbar -->
+    <div id="mainToolbar" class="fixed top-4 left-1/2 -translate-x-1/2 z-30 glass-panel rounded-2xl p-2 shadow-2xl flex items-center gap-1 border border-slate-700/50 transition-all duration-200">
+        <button id="tool-select" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Select / Move">
+            <i class="fa-solid fa-arrow-pointer text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-select">V</span>
+        </button>
+        <button id="tool-pan" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Pan / Hand Tool">
+            <i class="fa-solid fa-hand text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-pan">H</span>
+        </button>
+
+        <div class="h-6 w-[1px] bg-slate-700 mx-1"></div>
+
+        <button id="tool-pen" class="tool-btn active p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Pen">
+            <i class="fa-solid fa-pen text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-pen">P</span>
+        </button>
+        <button id="tool-highlighter" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Highlighter">
+            <i class="fa-solid fa-highlighter text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-highlighter">M</span>
+        </button>
+        <button id="tool-eraser" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Eraser">
+            <i class="fa-solid fa-eraser text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-eraser">E</span>
+        </button>
+
+        <div class="h-6 w-[1px] bg-slate-700 mx-1"></div>
+
+        <div class="relative group">
+            <button id="tool-shape" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white flex items-center gap-1" title="Shapes">
+                <i id="shape-icon" class="fa-solid fa-shapes text-lg"></i>
+                <i class="fa-solid fa-chevron-down text-xs opacity-70"></i>
+                <span class="keybind-badge" id="kb-badge-shape">S</span>
+            </button>
+            <div class="absolute top-full left-0 mt-2 glass-panel rounded-xl p-2 hidden group-hover:flex flex-col gap-1 shadow-xl min-w-[140px] z-40 border border-slate-700/50">
+                <button data-shape="line" class="shape-opt flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/60 text-left text-sm text-slate-200">
+                    <i class="fa-solid fa-slash w-5 text-center"></i> Line
+                </button>
+                <button data-shape="arrow" class="shape-opt flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/60 text-left text-sm text-slate-200">
+                    <i class="fa-solid fa-arrow-right w-5 text-center"></i> Arrow
+                </button>
+                <button data-shape="rect" class="shape-opt flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/60 text-left text-sm text-slate-200">
+                    <i class="fa-regular fa-square w-5 text-center"></i> Rectangle
+                </button>
+                <button data-shape="circle" class="shape-opt flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/60 text-left text-sm text-slate-200">
+                    <i class="fa-regular fa-circle w-5 text-center"></i> Circle
+                </button>
+            </div>
+        </div>
+
+        <button id="tool-text" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Text Note">
+            <i class="fa-solid fa-font text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-text">T</span>
+        </button>
+        <button id="tool-sticky" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Sticky Note">
+            <i class="fa-solid fa-note-sticky text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-sticky">N</span>
+        </button>
+        
+        <label id="tool-image-lbl" class="tool-btn p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white cursor-pointer" title="Upload Image">
+            <i class="fa-solid fa-image text-lg"></i>
+            <input type="file" id="imageUploader" accept="image/*" class="hidden">
+        </label>
+
+        <div class="h-6 w-[1px] bg-slate-700 mx-1"></div>
+
+        <button id="btn-undo" class="p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent relative" title="Undo">
+            <i class="fa-solid fa-rotate-left text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-undo">Ctrl+Z</span>
+        </button>
+        <button id="btn-redo" class="p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent relative" title="Redo">
+            <i class="fa-solid fa-rotate-right text-lg"></i>
+            <span class="keybind-badge" id="kb-badge-redo">Ctrl+Y</span>
+        </button>
+        
+        <div class="h-6 w-[1px] bg-slate-700 mx-1"></div>
+
+        <!-- Shortcuts Cheatsheet Toggle -->
+        <button id="btn-cheatsheet" class="p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Keyboard Shortcuts Helper">
+            <i class="fa-solid fa-keyboard text-lg"></i>
+        </button>
+
+        <!-- Settings Button -->
+        <button id="btn-settings" class="p-3 rounded-xl hover:bg-slate-700/60 text-slate-300 hover:text-white" title="App & Keybind Settings">
+            <i class="fa-solid fa-gear text-lg"></i>
+        </button>
+
+        <button id="btn-clear" class="p-3 rounded-xl hover:bg-rose-500/20 text-rose-400 hover:text-rose-300" title="Clear Canvas">
+            <i class="fa-solid fa-trash-can text-lg"></i>
+        </button>
+    </div>
+
+    <!-- Secondary Toolbar -->
+    <div id="subToolbar" class="fixed top-20 left-1/2 -translate-x-1/2 z-20 glass-panel rounded-xl px-4 py-2 shadow-lg flex items-center gap-4 text-xs border border-slate-700/50 transition-all duration-200">
+        <div id="colorPaletteSection" class="flex items-center gap-2">
+            <span class="text-slate-400 font-medium mr-1">Color:</span>
+            <div id="colorSwatches" class="flex items-center gap-1.5">
+                <div class="color-swatch selected" data-color="#ffffff" style="background-color: #ffffff;"></div>
+                <div class="color-swatch" data-color="#3b82f6" style="background-color: #3b82f6;"></div>
+                <div class="color-swatch" data-color="#ef4444" style="background-color: #ef4444;"></div>
+                <div class="color-swatch" data-color="#22c55e" style="background-color: #22c55e;"></div>
+                <div class="color-swatch" data-color="#eab308" style="background-color: #eab308;"></div>
+                <div class="color-swatch" data-color="#a855f7" style="background-color: #a855f7;"></div>
+            </div>
+            <label class="relative cursor-pointer ml-1">
+                <div class="w-6 h-6 rounded-full border-2 border-slate-500 flex items-center justify-center bg-gradient-to-tr from-indigo-500 via-pink-500 to-yellow-400 hover:scale-110 transition-transform">
+                    <i class="fa-solid fa-plus text-[9px] text-white"></i>
+                </div>
+                <input type="color" id="customColorPicker" value="#ffffff" class="opacity-0 absolute inset-0 w-full h-full cursor-pointer">
+            </label>
+        </div>
+
+        <div class="h-4 w-[1px] bg-slate-700"></div>
+
+        <div id="strokeSizeSection" class="flex items-center gap-2">
+            <span class="text-slate-400 font-medium">Size:</span>
+            <button class="stroke-preset px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 text-slate-200" data-size="3">Thin</button>
+            <button class="stroke-preset px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 text-slate-200 font-semibold" data-size="8">Medium</button>
+            <button class="stroke-preset px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 text-slate-200 font-bold" data-size="18">Thick</button>
+            <input type="range" id="strokeSlider" min="1" max="50" value="4" class="w-20 accent-blue-500 cursor-pointer">
+            <span id="strokeVal" class="text-slate-300 w-4 font-mono text-[11px]">4</span>
+        </div>
+    </div>
+
+    <!-- Right Controls / Minimap -->
+    <div class="fixed bottom-4 right-4 z-30 flex flex-col items-end gap-3">
+        <div id="minimapContainer" class="glass-panel w-48 h-32 rounded-xl overflow-hidden shadow-2xl relative border border-slate-700/60 hidden transition-all duration-200">
+            <canvas id="minimapCanvas" class="w-full h-full"></canvas>
+            <div id="minimapViewportRect" class="absolute border-2 border-blue-400 bg-blue-500/10 pointer-events-none rounded"></div>
+        </div>
+
+        <div class="glass-panel rounded-xl p-1.5 shadow-xl flex items-center gap-2 border border-slate-700/50 text-sm">
+            <button id="btn-toggle-minimap" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Toggle Minimap">
+                <i class="fa-solid fa-map text-sm"></i>
+            </button>
+
+            <div class="h-4 w-[1px] bg-slate-700"></div>
+
+            <button id="btn-zoom-out" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Zoom Out">
+                <i class="fa-solid fa-minus text-xs"></i>
+            </button>
+            <button id="btn-zoom-reset" class="px-2 py-1 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white font-mono text-xs" title="Reset Zoom (100%)">
+                <span id="zoomPercentage">100%</span>
+            </button>
+            <button id="btn-zoom-in" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Zoom In">
+                <i class="fa-solid fa-plus text-xs"></i>
+            </button>
+
+            <div class="h-4 w-[1px] bg-slate-700"></div>
+
+            <button id="btn-recenter" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white" title="Center View">
+                <i class="fa-solid fa-crosshairs text-sm"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Left Controls -->
+    <div class="fixed bottom-4 left-4 z-30 flex items-center gap-2">
+        <div class="glass-panel rounded-xl p-1.5 shadow-xl flex items-center gap-2 border border-slate-700/50 text-sm">
+            <button id="btn-theme-toggle" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white flex items-center gap-2" title="Toggle Board Theme">
+                <i id="theme-icon" class="fa-solid fa-moon text-indigo-400"></i>
+                <span class="text-xs font-medium hidden sm:inline">Theme</span>
+            </button>
+
+            <div class="h-4 w-[1px] bg-slate-700"></div>
+
+            <button id="btn-grid-style" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white flex items-center gap-2" title="Change Background Grid Style">
+                <i class="fa-solid fa-border-all text-sm"></i>
+                <span id="gridStyleText" class="text-xs font-medium hidden sm:inline">Grid: Dots</span>
+            </button>
+
+            <div class="h-4 w-[1px] bg-slate-700"></div>
+
+            <button id="btn-export" class="p-2 rounded-lg hover:bg-blue-600 bg-blue-600/80 text-white flex items-center gap-2 transition-colors" title="Export as PNG Image">
+                <i class="fa-solid fa-download text-sm"></i>
+                <span class="text-xs font-medium hidden sm:inline">Export PNG</span>
+            </button>
+            <button id="btn-save-json" class="p-2 rounded-lg hover:bg-slate-700/60 text-slate-300 hover:text-white flex items-center gap-2" title="Save Backup File">
+                <i class="fa-solid fa-floppy-disk text-sm"></i>
+                <span class="text-xs font-medium hidden sm:inline">Backup</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center hidden">
+        <div class="glass-panel max-w-2xl w-full mx-4 rounded-2xl shadow-2xl border border-slate-700/80 max-h-[90vh] flex flex-col overflow-hidden">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-5 border-b border-slate-700/80 bg-slate-900/40">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2.5">
+                    <i class="fa-solid fa-sliders text-blue-400"></i> Application Settings
+                </h3>
+                <button id="btn-close-settings" class="text-slate-400 hover:text-white transition-colors p-1">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Navigation Tabs -->
+            <div class="flex border-b border-slate-700/80 bg-slate-900/20 px-5 gap-2 pt-2">
+                <button data-tab="tab-keybinds" class="settings-tab-btn px-4 py-2.5 text-xs font-semibold rounded-t-xl border-b-2 border-blue-500 text-blue-400 bg-slate-800/50">
+                    <i class="fa-solid fa-keyboard mr-1.5"></i> Keybindings
+                </button>
+                <button data-tab="tab-sensitivity" class="settings-tab-btn px-4 py-2.5 text-xs font-semibold rounded-t-xl border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+                    <i class="fa-solid fa-gauge-high mr-1.5"></i> Controls & Sensitivity
+                </button>
+            </div>
+
+            <!-- Modal Body Content -->
+            <div class="overflow-y-auto no-scrollbar p-6 space-y-6 text-sm flex-1">
+                
+                <!-- KEYBINDINGS TAB -->
+                <div id="tab-keybinds" class="tab-content space-y-4">
+                    <div class="flex items-center justify-between bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl text-xs text-blue-200">
+                        <span class="flex items-center gap-2">
+                            <i class="fa-solid fa-circle-info text-blue-400 text-sm"></i>
+                            Click any keybinding button below to record a new key sequence or modifier combo (e.g. <b>Ctrl+Z</b>, <b>Ctrl+Shift+V</b>).
+                        </span>
+                    </div>
+
+                    <!-- Warning Conflict Notification -->
+                    <div id="keybindConflictWarning" class="hidden bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200 flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-400 text-sm"></i>
+                        <span id="conflictWarningText">Warning: Multiple actions share the same hotkey combination!</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="keybindingsGrid">
+                        <!-- Keybinding controls injected dynamically -->
+                    </div>
+                </div>
+
+                <!-- SENSITIVITY TAB -->
+                <div id="tab-sensitivity" class="tab-content hidden space-y-5">
+                    <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50 space-y-4">
+                        <h4 class="font-semibold text-slate-200 text-xs uppercase tracking-wider text-slate-400 mb-2">Canvas Motion Sensitivity</h4>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-300 mb-1 font-medium">
+                                <span>Zoom Sensitivity:</span>
+                                <span id="val-zoom-sens" class="font-mono text-blue-400">1.0x</span>
+                            </div>
+                            <input type="range" id="input-zoom-sens" min="0.2" max="3.0" step="0.1" value="1.0" class="w-full accent-blue-500 cursor-pointer">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-300 mb-1 font-medium">
+                                <span>Pan Sensitivity:</span>
+                                <span id="val-pan-sens" class="font-mono text-blue-400">1.0x</span>
+                            </div>
+                            <input type="range" id="input-pan-sens" min="0.2" max="3.0" step="0.1" value="1.0" class="w-full accent-blue-500 cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-slate-700/80 bg-slate-900/40 flex items-center justify-between">
+                <button id="btn-reset-keybinds" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition-colors">
+                    <i class="fa-solid fa-rotate-left mr-1.5"></i> Reset Keybindings
+                </button>
+                <button id="btn-save-settings" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-500/20 transition-colors">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Cheatsheet Modal -->
+    <div id="cheatsheetModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center hidden">
+        <div class="glass-panel max-w-lg w-full mx-4 rounded-2xl p-6 shadow-2xl border border-slate-700/80">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-700/80">
+                <h3 class="text-md font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-keyboard text-blue-400"></i> Active Keyboard Shortcuts
+                </h3>
+                <button id="btn-close-cheatsheet" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="py-4 max-h-[60vh] overflow-y-auto no-scrollbar space-y-2" id="cheatsheetList">
+                <!-- Populated via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Clear Modal -->
+    <div id="clearModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center hidden">
+        <div class="glass-panel max-w-sm w-full mx-4 rounded-2xl p-6 shadow-2xl border border-slate-700/80 text-center">
+            <div class="w-12 h-12 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto mb-4 text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Clear Infinite Canvas?</h3>
+            <p class="text-slate-400 text-sm mb-6">This will clear all paths, notes, and elements. You can undo this action.</p>
+            <div class="flex items-center justify-end gap-3">
+                <button id="btn-cancel-clear" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors">Cancel</button>
+                <button id="btn-confirm-clear" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-medium transition-colors">Clear All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toastNotification" class="fixed top-20 right-6 z-50 glass-panel border border-blue-500/40 text-blue-200 px-4 py-2.5 rounded-xl shadow-2xl text-xs flex items-center gap-2.5 opacity-0 pointer-events-none transition-all duration-300 transform translate-y-2">
+        <i class="fa-solid fa-circle-check text-blue-400 text-sm"></i>
+        <span id="toastMessage">Action performed</span>
+    </div>
+
+    <script>
+        /**
+         * OpenBoard Infinite Whiteboard Application Core
+         * Features customizable keybindings with modifier support, Clipboard integration, and vector engine.
+         */
+        class InfiniteWhiteboard {
+            constructor() {
+                this.canvas = document.getElementById('paintCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.viewport = document.getElementById('viewport');
+                this.domLayer = document.getElementById('domElementsLayer');
+                
+                this.minimapCanvas = document.getElementById('minimapCanvas');
+                this.minimapCtx = this.minimapCanvas.getContext('2d');
+                this.minimapRect = document.getElementById('minimapViewportRect');
+
+                // Camera & Sensitivity Settings
+                this.camera = {
+                    x: window.innerWidth / 2,
+                    y: window.innerHeight / 2,
+                    zoom: 1,
+                    minZoom: 0.1,
+                    maxZoom: 5
+                };
+                
+                this.sensitivity = {
+                    zoom: 1.0,
+                    pan: 1.0
+                };
+
+                // Default Action Keybindings with modifier support
+                this.defaultKeybinds = {
+                    select: 'v',
+                    pan: 'h',
+                    pen: 'p',
+                    highlighter: 'm',
+                    eraser: 'e',
+                    shape: 's',
+                    text: 't',
+                    sticky: 'n',
+                    undo: 'ctrl+z',
+                    redo: 'ctrl+y',
+                    copy: 'ctrl+c',
+                    paste: 'ctrl+v',
+                    delete: 'delete',
+                    zoomIn: '=',
+                    zoomOut: '-',
+                    zoomReset: '0'
+                };
+
+                this.keybinds = { ...this.defaultKeybinds };
+                this.currentlyRecordingAction = null;
+
+                this.currentTool = 'pen';
+                this.currentShape = 'line';
+                
+                this.strokeColor = '#ffffff';
+                this.strokeSize = 4;
+                this.isDarkTheme = true;
+                this.gridStyle = 'dots';
+                
+                this.elements = [];
+                this.domItems = new Map();
+                this.copiedElement = null; // Internal copy buffer
+                
+                this.isPointerDown = false;
+                this.isSpacePressed = false;
+                this.lastPointerPos = { x: 0, y: 0 };
+                this.currentDrawingPath = null;
+                this.currentShapePreview = null;
+                this.selectedElement = null;
+                
+                this.undoStack = [];
+                this.redoStack = [];
+                this.maxHistory = 50;
+
+                this.init();
+            }
+
+            init() {
+                this.loadSettingsFromStorage();
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+
+                // Pointer Navigation & Drawing
+                this.viewport.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+                window.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+                window.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+
+                // Zoom & Key Events
+                this.viewport.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
+                window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+                window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+
+                // System Clipboard Paste Support
+                window.addEventListener('paste', (e) => this.handleSystemPaste(e));
+
+                // Drag & Drop
+                this.viewport.addEventListener('dragover', (e) => e.preventDefault());
+                this.viewport.addEventListener('drop', (e) => this.handleFileDrop(e));
+
+                this.setupUIControls();
+                this.updateKeybindBadges();
+                this.saveState();
+                this.render();
+            }
+
+            resizeCanvas() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                this.render();
+            }
+
+            screenToWorld(screenX, screenY) {
+                return {
+                    x: (screenX - this.camera.x) / this.camera.zoom,
+                    y: (screenY - this.camera.y) / this.camera.zoom
+                };
+            }
+
+            worldToScreen(worldX, worldY) {
+                return {
+                    x: worldX * this.camera.zoom + this.camera.x,
+                    y: worldY * this.camera.zoom + this.camera.y
+                };
+            }
+
+            showToast(message) {
+                const toast = document.getElementById('toastNotification');
+                document.getElementById('toastMessage').innerText = message;
+                toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+                toast.classList.add('opacity-100', 'translate-y-0');
+
+                if (this.toastTimeout) clearTimeout(this.toastTimeout);
+                this.toastTimeout = setTimeout(() => {
+                    toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+                    toast.classList.remove('opacity-100', 'translate-y-0');
+                }, 2200);
+            }
+
+            handlePointerDown(e) {
+                if (e.button === 1 || this.isSpacePressed || this.currentTool === 'pan') {
+                    this.isPanning = true;
+                    this.lastPointerPos = { x: e.clientX, y: e.clientY };
+                    this.viewport.style.cursor = 'grabbing';
+                    return;
+                }
+
+                if (e.button === 0) {
+                    const worldPos = this.screenToWorld(e.clientX, e.clientY);
+                    this.isPointerDown = true;
+                    this.lastPointerPos = { x: e.clientX, y: e.clientY };
+
+                    if (this.currentTool === 'pen' || this.currentTool === 'highlighter' || this.currentTool === 'eraser') {
+                        this.currentDrawingPath = {
+                            id: Date.now().toString(),
+                            type: 'path',
+                            tool: this.currentTool,
+                            color: this.currentTool === 'eraser' ? (this.isDarkTheme ? '#121212' : '#f8fafc') : this.strokeColor,
+                            size: this.currentTool === 'eraser' ? this.strokeSize * 4 : this.strokeSize,
+                            opacity: this.currentTool === 'highlighter' ? 0.35 : 1.0,
+                            points: [worldPos]
+                        };
+                    } else if (this.currentTool === 'shape') {
+                        this.currentShapePreview = {
+                            id: Date.now().toString(),
+                            type: 'shape',
+                            shapeType: this.currentShape,
+                            startX: worldPos.x,
+                            startY: worldPos.y,
+                            endX: worldPos.x,
+                            endY: worldPos.y,
+                            color: this.strokeColor,
+                            size: this.strokeSize
+                        };
+                    } else if (this.currentTool === 'text') {
+                        this.addTextNote(worldPos.x, worldPos.y);
+                        this.setTool('select');
+                    } else if (this.currentTool === 'sticky') {
+                        this.addStickyNote(worldPos.x, worldPos.y);
+                        this.setTool('select');
+                    } else if (this.currentTool === 'select') {
+                        this.selectElementAt(worldPos.x, worldPos.y);
+                    }
+                }
+            }
+
+            handlePointerMove(e) {
+                if (this.isPanning) {
+                    const dx = (e.clientX - this.lastPointerPos.x) * this.sensitivity.pan;
+                    const dy = (e.clientY - this.lastPointerPos.y) * this.sensitivity.pan;
+                    this.camera.x += dx;
+                    this.camera.y += dy;
+                    this.lastPointerPos = { x: e.clientX, y: e.clientY };
+                    this.render();
+                    return;
+                }
+
+                if (!this.isPointerDown) return;
+
+                const worldPos = this.screenToWorld(e.clientX, e.clientY);
+
+                if (this.currentDrawingPath) {
+                    this.currentDrawingPath.points.push(worldPos);
+                    this.render();
+                } else if (this.currentShapePreview) {
+                    this.currentShapePreview.endX = worldPos.x;
+                    this.currentShapePreview.endY = worldPos.y;
+                    this.render();
+                } else if (this.currentTool === 'select' && this.selectedElement) {
+                    const dx = (e.clientX - this.lastPointerPos.x) / this.camera.zoom;
+                    const dy = (e.clientY - this.lastPointerPos.y) / this.camera.zoom;
+                    
+                    if (this.selectedElement.x !== undefined) this.selectedElement.x += dx;
+                    if (this.selectedElement.y !== undefined) this.selectedElement.y += dy;
+                    if (this.selectedElement.startX !== undefined) {
+                        this.selectedElement.startX += dx;
+                        this.selectedElement.startY += dy;
+                        this.selectedElement.endX += dx;
+                        this.selectedElement.endY += dy;
+                    }
+                    if (this.selectedElement.points) {
+                        this.selectedElement.points.forEach(p => { p.x += dx; p.y += dy; });
+                    }
+
+                    this.lastPointerPos = { x: e.clientX, y: e.clientY };
+                    this.render();
+                }
+            }
+
+            handlePointerUp(e) {
+                if (this.isPanning) {
+                    this.isPanning = false;
+                    this.viewport.style.cursor = this.currentTool === 'pan' ? 'grab' : 'default';
+                }
+
+                if (this.isPointerDown) {
+                    this.isPointerDown = false;
+
+                    if (this.currentDrawingPath) {
+                        if (this.currentDrawingPath.points.length > 0) {
+                            this.elements.push(this.currentDrawingPath);
+                            this.saveState();
+                        }
+                        this.currentDrawingPath = null;
+                    } else if (this.currentShapePreview) {
+                        this.elements.push(this.currentShapePreview);
+                        this.saveState();
+                        this.currentShapePreview = null;
+                    }
+
+                    this.render();
+                }
+            }
+
+            handleWheel(e) {
+                e.preventDefault();
+                const baseFactor = e.deltaY < 0 ? 1.1 : 0.9;
+                const zoomFactor = Math.pow(baseFactor, this.sensitivity.zoom);
+                const newZoom = Math.min(Math.max(this.camera.zoom * zoomFactor, this.camera.minZoom), this.camera.maxZoom);
+
+                if (newZoom !== this.camera.zoom) {
+                    const mouseX = e.clientX;
+                    const mouseY = e.clientY;
+
+                    this.camera.x = mouseX - (mouseX - this.camera.x) * (newZoom / this.camera.zoom);
+                    this.camera.y = mouseY - (mouseY - this.camera.y) * (newZoom / this.camera.zoom);
+                    this.camera.zoom = newZoom;
+
+                    this.updateZoomDisplay();
+                    this.render();
+                }
+            }
+
+            setZoom(newZoom) {
+                const targetZoom = Math.min(Math.max(newZoom, this.camera.minZoom), this.camera.maxZoom);
+                const centerX = window.innerWidth / 2;
+                const centerY = window.innerHeight / 2;
+
+                this.camera.x = centerX - (centerX - this.camera.x) * (targetZoom / this.camera.zoom);
+                this.camera.y = centerY - (centerY - this.camera.y) * (targetZoom / this.camera.zoom);
+                this.camera.zoom = targetZoom;
+
+                this.updateZoomDisplay();
+                this.render();
+            }
+
+            resetView() {
+                this.camera.zoom = 1;
+                this.camera.x = window.innerWidth / 2;
+                this.camera.y = window.innerHeight / 2;
+                this.updateZoomDisplay();
+                this.render();
+            }
+
+            updateZoomDisplay() {
+                document.getElementById('zoomPercentage').innerText = `${Math.round(this.camera.zoom * 100)}%`;
+            }
+
+            // --- KEYBINDINGS & HOTKEYS SYSTEM ---
+            getEventKeyString(e) {
+                let parts = [];
+                if (e.ctrlKey) parts.push('ctrl');
+                if (e.altKey) parts.push('alt');
+                if (e.shiftKey) parts.push('shift');
+                if (e.metaKey) parts.push('meta');
+
+                let key = e.key.toLowerCase();
+                if (['control', 'alt', 'shift', 'meta'].includes(key)) {
+                    return parts.join('+');
+                }
+
+                if (key === ' ') key = 'space';
+                parts.push(key);
+                return parts.join('+');
+            }
+
+            handleKeyDown(e) {
+                if (e.code === 'Space' && !this.isSpacePressed && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && !document.activeElement.isContentEditable) {
+                    this.isSpacePressed = true;
+                    this.viewport.style.cursor = 'grab';
+                }
+
+                // Hotkey Recording Mode
+                if (this.currentlyRecordingAction) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const keyStr = this.getEventKeyString(e);
+                    if (keyStr && !['ctrl', 'alt', 'shift', 'meta'].includes(keyStr)) {
+                        this.keybinds[this.currentlyRecordingAction] = keyStr;
+                        const actionName = this.currentlyRecordingAction;
+                        this.currentlyRecordingAction = null;
+                        this.populateKeybindsGrid();
+                        this.updateKeybindBadges();
+                        this.showToast(`Updated keybind for ${actionName}`);
+                    }
+                    return;
+                }
+
+                // Ignore hotkeys inside text inputs
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable) {
+                    return;
+                }
+
+                const pressedCombo = this.getEventKeyString(e);
+
+                // Match pressed key with customized action map
+                for (let action in this.keybinds) {
+                    if (this.keybinds[action] === pressedCombo) {
+                        e.preventDefault();
+                        this.triggerAction(action);
+                        break;
+                    }
+                }
+            }
+
+            handleKeyUp(e) {
+                if (e.code === 'Space') {
+                    this.isSpacePressed = false;
+                    this.viewport.style.cursor = this.currentTool === 'pan' ? 'grab' : 'default';
+                }
+            }
+
+            triggerAction(action) {
+                switch (action) {
+                    case 'select': this.setTool('select'); break;
+                    case 'pan': this.setTool('pan'); break;
+                    case 'pen': this.setTool('pen'); break;
+                    case 'highlighter': this.setTool('highlighter'); break;
+                    case 'eraser': this.setTool('eraser'); break;
+                    case 'shape': this.setTool('shape'); break;
+                    case 'text': this.setTool('text'); break;
+                    case 'sticky': this.setTool('sticky'); break;
+                    case 'undo': this.undo(); break;
+                    case 'redo': this.redo(); break;
+                    case 'copy': this.copySelectedElement(); break;
+                    case 'paste': this.pasteElement(); break;
+                    case 'delete': this.deleteSelectedElement(); break;
+                    case 'zoomIn': this.setZoom(this.camera.zoom * 1.2); break;
+                    case 'zoomOut': this.setZoom(this.camera.zoom / 1.2); break;
+                    case 'zoomReset': this.resetView(); break;
+                }
+            }
+
+            copySelectedElement() {
+                if (this.selectedElement) {
+                    this.copiedElement = JSON.parse(JSON.stringify(this.selectedElement));
+                    this.showToast("Copied element to clipboard");
+                }
+            }
+
+            pasteElement() {
+                if (this.copiedElement) {
+                    const clone = JSON.parse(JSON.stringify(this.copiedElement));
+                    clone.id = 'copy_' + Date.now();
+                    
+                    const offset = 30 / this.camera.zoom;
+                    if (clone.x !== undefined) clone.x += offset;
+                    if (clone.y !== undefined) clone.y += offset;
+                    if (clone.startX !== undefined) {
+                        clone.startX += offset;
+                        clone.startY += offset;
+                        clone.endX += offset;
+                        clone.endY += offset;
+                    }
+
+                    if (clone.type === 'sticky') {
+                        this.addStickyNote(clone.x + 100, clone.y + 100, clone.text, clone.color);
+                    } else if (clone.type === 'text') {
+                        this.addTextNote(clone.x, clone.y, clone.text);
+                    } else {
+                        this.elements.push(clone);
+                        this.selectedElement = clone;
+                        this.saveState();
+                        this.render();
+                    }
+                    this.showToast("Pasted element");
+                }
+            }
+
+            deleteSelectedElement() {
+                if (this.selectedElement) {
+                    if (this.selectedElement.id && this.domItems.has(this.selectedElement.id)) {
+                        this.removeDomElement(this.selectedElement.id);
+                    } else {
+                        this.elements = this.elements.filter(el => el !== this.selectedElement);
+                        this.selectedElement = null;
+                        this.saveState();
+                        this.render();
+                    }
+                    this.showToast("Deleted element");
+                }
+            }
+
+            handleSystemPaste(e) {
+                if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable) {
+                    return;
+                }
+
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                for (let item of items) {
+                    if (item.type.indexOf('image') === 0) {
+                        const blob = item.getAsFile();
+                        this.processImageFile(blob, this.lastPointerPos.x || window.innerWidth / 2, this.lastPointerPos.y || window.innerHeight / 2);
+                        this.showToast("Pasted image from clipboard");
+                        break;
+                    }
+                }
+            }
+
+            // --- CANVAS RENDER & DRAWING ---
+            render() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                const bgColor = this.isDarkTheme ? '#121212' : '#f8fafc';
+                this.ctx.fillStyle = bgColor;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.drawGrid();
+
+                this.ctx.save();
+                this.ctx.translate(this.camera.x, this.camera.y);
+                this.ctx.scale(this.camera.zoom, this.camera.zoom);
+
+                this.elements.forEach(elem => this.drawElement(elem));
+
+                if (this.currentDrawingPath) this.drawElement(this.currentDrawingPath);
+                if (this.currentShapePreview) this.drawElement(this.currentShapePreview);
+
+                this.ctx.restore();
+
+                this.updateDomElementsTransform();
+                this.renderMinimap();
+            }
+
+            drawGrid() {
+                if (this.gridStyle === 'none') return;
+
+                const gridSpacing = 40 * this.camera.zoom;
+                const gridColor = this.isDarkTheme ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+
+                const startX = this.camera.x % gridSpacing;
+                const startY = this.camera.y % gridSpacing;
+
+                this.ctx.save();
+
+                if (this.gridStyle === 'dots') {
+                    this.ctx.fillStyle = gridColor;
+                    const dotRadius = Math.max(1, 1.5 * Math.min(this.camera.zoom, 1.5));
+                    for (let x = startX; x < this.canvas.width; x += gridSpacing) {
+                        for (let y = startY; y < this.canvas.height; y += gridSpacing) {
+                            this.ctx.beginPath();
+                            this.ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+                            this.ctx.fill();
+                        }
+                    }
+                } else if (this.gridStyle === 'grid') {
+                    this.ctx.strokeStyle = gridColor;
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    for (let x = startX; x < this.canvas.width; x += gridSpacing) {
+                        this.ctx.moveTo(x, 0);
+                        this.ctx.lineTo(x, this.canvas.height);
+                    }
+                    for (let y = startY; y < this.canvas.height; y += gridSpacing) {
+                        this.ctx.moveTo(0, y);
+                        this.ctx.lineTo(this.canvas.width, y);
+                    }
+                    this.ctx.stroke();
+                } else if (this.gridStyle === 'iso') {
+                    this.ctx.strokeStyle = gridColor;
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    const isoSpacing = gridSpacing * 1.5;
+                    for (let x = -this.canvas.height; x < this.canvas.width + this.canvas.height; x += isoSpacing) {
+                        this.ctx.moveTo(x, 0);
+                        this.ctx.lineTo(x + this.canvas.height, this.canvas.height);
+                        this.ctx.moveTo(x, 0);
+                        this.ctx.lineTo(x - this.canvas.height, this.canvas.height);
+                    }
+                    this.ctx.stroke();
+                }
+
+                this.ctx.restore();
+            }
+
+            drawElement(elem) {
+                this.ctx.save();
+                this.ctx.globalAlpha = elem.opacity !== undefined ? elem.opacity : 1.0;
+
+                if (elem.type === 'path') {
+                    if (!elem.points || elem.points.length < 1) return;
+
+                    this.ctx.strokeStyle = elem.color;
+                    this.ctx.lineWidth = elem.size;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(elem.points[0].x, elem.points[0].y);
+
+                    for (let i = 1; i < elem.points.length; i++) {
+                        const xc = (elem.points[i].x + elem.points[i - 1].x) / 2;
+                        const yc = (elem.points[i].y + elem.points[i - 1].y) / 2;
+                        this.ctx.quadraticCurveTo(elem.points[i - 1].x, elem.points[i - 1].y, xc, yc);
+                    }
+
+                    this.ctx.stroke();
+                } else if (elem.type === 'shape') {
+                    this.ctx.strokeStyle = elem.color;
+                    this.ctx.fillStyle = elem.color;
+                    this.ctx.lineWidth = elem.size;
+                    this.ctx.lineCap = 'round';
+
+                    const { startX, startY, endX, endY, shapeType } = elem;
+
+                    this.ctx.beginPath();
+                    if (shapeType === 'line') {
+                        this.ctx.moveTo(startX, startY);
+                        this.ctx.lineTo(endX, endY);
+                        this.ctx.stroke();
+                    } else if (shapeType === 'arrow') {
+                        const headLength = Math.max(12, elem.size * 3);
+                        const angle = Math.atan2(endY - startY, endX - startX);
+                        this.ctx.moveTo(startX, startY);
+                        this.ctx.lineTo(endX, endY);
+                        this.ctx.stroke();
+
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(endX, endY);
+                        this.ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
+                        this.ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6), endY - headLength * Math.sin(angle + Math.PI / 6));
+                        this.ctx.closePath();
+                        this.ctx.fill();
+                    } else if (shapeType === 'rect') {
+                        const w = endX - startX;
+                        const h = endY - startY;
+                        this.ctx.strokeRect(startX, startY, w, h);
+                    } else if (shapeType === 'circle') {
+                        const radius = Math.hypot(endX - startX, endY - startY);
+                        this.ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+                        this.ctx.stroke();
+                    }
+                } else if (elem.type === 'image' && elem.imgElement) {
+                    this.ctx.drawImage(elem.imgElement, elem.x, elem.y, elem.width, elem.height);
+                    if (this.selectedElement === elem) {
+                        this.ctx.strokeStyle = '#3b82f6';
+                        this.ctx.lineWidth = 2 / this.camera.zoom;
+                        this.ctx.strokeRect(elem.x - 2, elem.y - 2, elem.width + 4, elem.height + 4);
+                    }
+                }
+
+                this.ctx.restore();
+            }
+
+            addStickyNote(worldX, worldY, text = '', color = '#fef08a') {
+                const id = 'sticky_' + Date.now();
+                const noteObj = {
+                    id,
+                    type: 'sticky',
+                    x: worldX - 100,
+                    y: worldY - 100,
+                    width: 200,
+                    height: 180,
+                    text,
+                    color
+                };
+
+                const div = document.createElement('div');
+                div.id = id;
+                div.className = 'canvas-dom-item sticky-note flex flex-col p-3 text-slate-800 transition-shadow';
+                div.style.backgroundColor = color;
+                div.style.width = `${noteObj.width}px`;
+                div.style.height = `${noteObj.height}px`;
+
+                div.innerHTML = `
+                    <div class="flex items-center justify-between mb-2 handle cursor-move border-b border-black/10 pb-1">
+                        <div class="flex gap-1.5">
+                            <span class="color-btn w-3.5 h-3.5 rounded-full bg-yellow-200 border border-yellow-400 cursor-pointer" data-color="#fef08a"></span>
+                            <span class="color-btn w-3.5 h-3.5 rounded-full bg-blue-200 border border-blue-400 cursor-pointer" data-color="#bfdbfe"></span>
+                            <span class="color-btn w-3.5 h-3.5 rounded-full bg-green-200 border border-green-400 cursor-pointer" data-color="#bbf7d0"></span>
+                            <span class="color-btn w-3.5 h-3.5 rounded-full bg-pink-200 border border-pink-400 cursor-pointer" data-color="#fbcfe8"></span>
+                        </div>
+                        <button class="delete-btn text-xs text-black/40 hover:text-rose-600 transition-colors"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <textarea class="w-full flex-1 bg-transparent resize-none outline-none font-medium text-sm text-slate-800 placeholder-black/30 no-scrollbar" placeholder="Type your note...">${text}</textarea>
+                `;
+
+                this.domLayer.appendChild(div);
+                this.domItems.set(id, noteObj);
+                this.elements.push(noteObj);
+
+                const textarea = div.querySelector('textarea');
+                textarea.addEventListener('input', (e) => {
+                    noteObj.text = e.target.value;
+                });
+
+                div.querySelector('.delete-btn').addEventListener('click', () => {
+                    this.removeDomElement(id);
+                });
+
+                div.querySelectorAll('.color-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const newColor = e.target.getAttribute('data-color');
+                        div.style.backgroundColor = newColor;
+                        noteObj.color = newColor;
+                    });
+                });
+
+                this.makeDomElementDraggable(div, noteObj);
+                this.saveState();
+                this.render();
+            }
+
+            addTextNote(worldX, worldY, text = 'Click to edit text') {
+                const id = 'text_' + Date.now();
+                const textObj = {
+                    id,
+                    type: 'text',
+                    x: worldX,
+                    y: worldY,
+                    text,
+                    color: this.strokeColor
+                };
+
+                const div = document.createElement('div');
+                div.id = id;
+                div.className = 'canvas-dom-item p-1.5 rounded border border-transparent hover:border-blue-500/50 cursor-move';
+                div.style.color = textObj.color;
+
+                div.innerHTML = `
+                    <div class="flex items-center gap-1">
+                        <div contenteditable="true" class="outline-none min-w-[60px] text-lg font-semibold px-1 py-0.5">${text}</div>
+                        <button class="delete-btn text-xs opacity-0 hover:opacity-100 text-rose-400 hover:text-rose-300 ml-1"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>
+                `;
+
+                this.domLayer.appendChild(div);
+                this.domItems.set(id, textObj);
+                this.elements.push(textObj);
+
+                const editable = div.querySelector('[contenteditable]');
+                editable.addEventListener('blur', () => {
+                    textObj.text = editable.innerText;
+                });
+
+                div.querySelector('.delete-btn').addEventListener('click', () => {
+                    this.removeDomElement(id);
+                });
+
+                this.makeDomElementDraggable(div, textObj);
+                this.saveState();
+                this.render();
+            }
+
+            makeDomElementDraggable(div, itemObj) {
+                let isDragging = false;
+                let startX, startY;
+
+                const onPointerDown = (e) => {
+                    if (e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true' || e.target.classList.contains('color-btn') || e.target.closest('.delete-btn')) {
+                        return;
+                    }
+                    isDragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    e.stopPropagation();
+                };
+
+                const onPointerMove = (e) => {
+                    if (!isDragging) return;
+                    const dx = (e.clientX - startX) / this.camera.zoom;
+                    const dy = (e.clientY - startY) / this.camera.zoom;
+                    itemObj.x += dx;
+                    itemObj.y += dy;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    this.updateDomElementsTransform();
+                };
+
+                const onPointerUp = () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        this.saveState();
+                    }
+                };
+
+                div.addEventListener('pointerdown', onPointerDown);
+                window.addEventListener('pointermove', onPointerMove);
+                window.addEventListener('pointerup', onPointerUp);
+            }
+
+            removeDomElement(id) {
+                const div = document.getElementById(id);
+                if (div) div.remove();
+                this.domItems.delete(id);
+                this.elements = this.elements.filter(el => el.id !== id);
+                this.saveState();
+                this.render();
+            }
+
+            updateDomElementsTransform() {
+                this.domItems.forEach((itemObj, id) => {
+                    const div = document.getElementById(id);
+                    if (div) {
+                        const screenPos = this.worldToScreen(itemObj.x, itemObj.y);
+                        div.style.transform = `translate(${screenPos.x}px, ${screenPos.y}px) scale(${this.camera.zoom})`;
+                    }
+                });
+            }
+
+            handleFileDrop(e) {
+                e.preventDefault();
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    this.processImageFile(files[0], e.clientX, e.clientY);
+                }
+            }
+
+            processImageFile(file, screenX, screenY) {
+                if (!file.type.startsWith('image/')) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const worldPos = this.screenToWorld(screenX || window.innerWidth / 2, screenY || window.innerHeight / 2);
+                        const aspect = img.width / img.height;
+                        const width = Math.min(350, img.width);
+                        const height = width / aspect;
+
+                        const imgObj = {
+                            id: 'img_' + Date.now(),
+                            type: 'image',
+                            imgElement: img,
+                            x: worldPos.x - width / 2,
+                            y: worldPos.y - height / 2,
+                            width,
+                            height
+                        };
+
+                        this.elements.push(imgObj);
+                        this.saveState();
+                        this.render();
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            selectElementAt(worldX, worldY) {
+                this.selectedElement = null;
+                for (let i = this.elements.length - 1; i >= 0; i--) {
+                    const el = this.elements[i];
+                    if (el.type === 'image') {
+                        if (worldX >= el.x && worldX <= el.x + el.width && worldY >= el.y && worldY <= el.y + el.height) {
+                            this.selectedElement = el;
+                            break;
+                        }
+                    } else if (el.type === 'shape') {
+                        const minX = Math.min(el.startX, el.endX) - 10;
+                        const maxX = Math.max(el.startX, el.endX) + 10;
+                        const minY = Math.min(el.startY, el.endY) - 10;
+                        const maxY = Math.max(el.startY, el.endY) + 10;
+                        if (worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY) {
+                            this.selectedElement = el;
+                            break;
+                        }
+                    }
+                }
+                this.render();
+            }
+
+            renderMinimap() {
+                const mmCanvas = this.minimapCanvas;
+                const mmCtx = this.minimapCtx;
+                mmCtx.clearRect(0, 0, mmCanvas.width, mmCanvas.height);
+
+                mmCtx.fillStyle = this.isDarkTheme ? '#1e293b' : '#e2e8f0';
+                mmCtx.fillRect(0, 0, mmCanvas.width, mmCanvas.height);
+
+                if (this.elements.length === 0) return;
+
+                let minX = -1000, maxX = 1000, minY = -1000, maxY = 1000;
+                this.elements.forEach(el => {
+                    if (el.x !== undefined) {
+                        minX = Math.min(minX, el.x);
+                        maxX = Math.max(maxX, el.x + (el.width || 100));
+                        minY = Math.min(minY, el.y);
+                        maxY = Math.max(maxY, el.y + (el.height || 100));
+                    }
+                });
+
+                const contentWidth = maxX - minX;
+                const contentHeight = maxY - minY;
+                const scale = Math.min(mmCanvas.width / contentWidth, mmCanvas.height / contentHeight) * 0.8;
+
+                mmCtx.save();
+                mmCtx.translate(mmCanvas.width / 2, mmCanvas.height / 2);
+                mmCtx.scale(scale, scale);
+                mmCtx.translate(-(minX + contentWidth / 2), -(minY + contentHeight / 2));
+
+                this.elements.forEach(el => {
+                    mmCtx.fillStyle = '#3b82f6';
+                    if (el.x !== undefined && el.y !== undefined) {
+                        mmCtx.fillRect(el.x, el.y, el.width || 40, el.height || 40);
+                    }
+                });
+
+                mmCtx.restore();
+
+                const screenTopLeft = this.screenToWorld(0, 0);
+                const screenBottomRight = this.screenToWorld(window.innerWidth, window.innerHeight);
+
+                const vpW = (screenBottomRight.x - screenTopLeft.x) * scale;
+                const vpH = (screenBottomRight.y - screenTopLeft.y) * scale;
+                const vpX = mmCanvas.width / 2 + (screenTopLeft.x - (minX + contentWidth / 2)) * scale;
+                const vpY = mmCanvas.height / 2 + (screenTopLeft.y - (minY + contentHeight / 2)) * scale;
+
+                this.minimapRect.style.width = `${Math.max(10, Math.min(mmCanvas.width, vpW))}px`;
+                this.minimapRect.style.height = `${Math.max(10, Math.min(mmCanvas.height, vpH))}px`;
+                this.minimapRect.style.left = `${Math.max(0, Math.min(mmCanvas.width - 20, vpX))}px`;
+                this.minimapRect.style.top = `${Math.max(0, Math.min(mmCanvas.height - 20, vpY))}px`;
+            }
+
+            saveState() {
+                const snapshot = this.elements.map(el => {
+                    if (el.type === 'path') {
+                        return { ...el, points: el.points.map(p => ({ ...p })) };
+                    }
+                    return { ...el };
+                });
+
+                this.undoStack.push(snapshot);
+                if (this.undoStack.length > this.maxHistory) this.undoStack.shift();
+                this.redoStack = [];
+
+                this.updateUndoRedoButtons();
+            }
+
+            undo() {
+                if (this.undoStack.length > 1) {
+                    this.redoStack.push(this.undoStack.pop());
+                    const previousState = this.undoStack[this.undoStack.length - 1];
+                    this.restoreState(previousState);
+                    this.showToast("Undo performed");
+                }
+            }
+
+            redo() {
+                if (this.redoStack.length > 0) {
+                    const nextState = this.redoStack.pop();
+                    this.undoStack.push(nextState);
+                    this.restoreState(nextState);
+                    this.showToast("Redo performed");
+                }
+            }
+
+            restoreState(state) {
+                this.domItems.forEach((_, id) => {
+                    const el = document.getElementById(id);
+                    if (el) el.remove();
+                });
+                this.domItems.clear();
+
+                this.elements = state.map(el => {
+                    if (el.type === 'sticky') {
+                        this.addStickyNote(el.x + 100, el.y + 100, el.text, el.color);
+                        return this.elements[this.elements.length - 1];
+                    } else if (el.type === 'text') {
+                        this.addTextNote(el.x, el.y, el.text);
+                        return this.elements[this.elements.length - 1];
+                    }
+                    return { ...el };
+                });
+
+                this.updateUndoRedoButtons();
+                this.render();
+            }
+
+            updateUndoRedoButtons() {
+                document.getElementById('btn-undo').disabled = this.undoStack.length <= 1;
+                document.getElementById('btn-redo').disabled = this.redoStack.length === 0;
+            }
+
+            clearCanvas() {
+                this.elements = [];
+                this.domItems.forEach((_, id) => {
+                    const el = document.getElementById(id);
+                    if (el) el.remove();
+                });
+                this.domItems.clear();
+                this.saveState();
+                this.render();
+                this.showToast("Canvas cleared");
+            }
+
+            setTool(tool) {
+                this.currentTool = tool;
+                document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+
+                const activeBtn = document.getElementById(`tool-${tool}`);
+                if (activeBtn) activeBtn.classList.add('active');
+
+                if (tool === 'pan') {
+                    this.viewport.style.cursor = 'grab';
+                } else if (tool === 'select') {
+                    this.viewport.style.cursor = 'default';
+                } else {
+                    this.viewport.style.cursor = 'crosshair';
+                }
+            }
+
+            // --- SETTINGS MODAL & CHEATSHEET MANAGEMENT ---
+            setupUIControls() {
+                const tools = ['select', 'pan', 'pen', 'highlighter', 'eraser', 'shape', 'text', 'sticky'];
+                tools.forEach(t => {
+                    const btn = document.getElementById(`tool-${t}`);
+                    if (btn) btn.addEventListener('click', () => this.setTool(t));
+                });
+
+                document.querySelectorAll('.shape-opt').forEach(opt => {
+                    opt.addEventListener('click', (e) => {
+                        this.currentShape = e.currentTarget.getAttribute('data-shape');
+                        this.setTool('shape');
+                    });
+                });
+
+                document.querySelectorAll('.color-swatch').forEach(swatch => {
+                    swatch.addEventListener('click', (e) => {
+                        document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+                        swatch.classList.add('selected');
+                        this.strokeColor = swatch.getAttribute('data-color');
+                    });
+                });
+
+                document.getElementById('customColorPicker').addEventListener('input', (e) => {
+                    this.strokeColor = e.target.value;
+                });
+
+                document.querySelectorAll('.stroke-preset').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const size = parseInt(e.target.getAttribute('data-size'));
+                        this.strokeSize = size;
+                        document.getElementById('strokeSlider').value = size;
+                        document.getElementById('strokeVal').innerText = size;
+                    });
+                });
+
+                document.getElementById('strokeSlider').addEventListener('input', (e) => {
+                    this.strokeSize = parseInt(e.target.value);
+                    document.getElementById('strokeVal').innerText = this.strokeSize;
+                });
+
+                document.getElementById('imageUploader').addEventListener('change', (e) => {
+                    if (e.target.files && e.target.files[0]) {
+                        this.processImageFile(e.target.files[0]);
+                    }
+                });
+
+                document.getElementById('btn-zoom-in').addEventListener('click', () => this.setZoom(this.camera.zoom * 1.2));
+                document.getElementById('btn-zoom-out').addEventListener('click', () => this.setZoom(this.camera.zoom / 1.2));
+                document.getElementById('btn-zoom-reset').addEventListener('click', () => this.resetView());
+                document.getElementById('btn-recenter').addEventListener('click', () => this.resetView());
+
+                document.getElementById('btn-toggle-minimap').addEventListener('click', () => {
+                    document.getElementById('minimapContainer').classList.toggle('hidden');
+                });
+
+                document.getElementById('btn-theme-toggle').addEventListener('click', () => {
+                    this.isDarkTheme = !this.isDarkTheme;
+                    const icon = document.getElementById('theme-icon');
+                    if (this.isDarkTheme) {
+                        icon.className = 'fa-solid fa-moon text-indigo-400';
+                        document.body.style.backgroundColor = '#121212';
+                    } else {
+                        icon.className = 'fa-solid fa-sun text-amber-500';
+                        document.body.style.backgroundColor = '#f8fafc';
+                    }
+                    this.render();
+                });
+
+                document.getElementById('btn-grid-style').addEventListener('click', () => {
+                    const styles = ['dots', 'grid', 'iso', 'none'];
+                    const nextIndex = (styles.indexOf(this.gridStyle) + 1) % styles.length;
+                    this.gridStyle = styles[nextIndex];
+                    document.getElementById('gridStyleText').innerText = `Grid: ${this.gridStyle.charAt(0).toUpperCase() + this.gridStyle.slice(1)}`;
+                    this.render();
+                });
+
+                document.getElementById('btn-undo').addEventListener('click', () => this.undo());
+                document.getElementById('btn-redo').addEventListener('click', () => this.redo());
+
+                const clearModal = document.getElementById('clearModal');
+                document.getElementById('btn-clear').addEventListener('click', () => clearModal.classList.remove('hidden'));
+                document.getElementById('btn-cancel-clear').addEventListener('click', () => clearModal.classList.add('hidden'));
+                document.getElementById('btn-confirm-clear').addEventListener('click', () => {
+                    this.clearCanvas();
+                    clearModal.classList.add('hidden');
+                });
+
+                document.getElementById('btn-export').addEventListener('click', () => this.exportImage());
+                document.getElementById('btn-save-json').addEventListener('click', () => this.exportJSON());
+
+                // Settings Tabs Navigation
+                document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const targetTab = e.currentTarget.getAttribute('data-tab');
+                        document.querySelectorAll('.settings-tab-btn').forEach(b => {
+                            b.classList.remove('border-blue-500', 'text-blue-400', 'bg-slate-800/50');
+                            b.classList.add('border-transparent', 'text-slate-400');
+                        });
+                        e.currentTarget.classList.add('border-blue-500', 'text-blue-400', 'bg-slate-800/50');
+                        e.currentTarget.classList.remove('border-transparent', 'text-slate-400');
+
+                        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+                        document.getElementById(targetTab).classList.remove('hidden');
+                    });
+                });
+
+                // Settings Modal Controls
+                const settingsModal = document.getElementById('settingsModal');
+                document.getElementById('btn-settings').addEventListener('click', () => {
+                    this.populateSettingsModal();
+                    settingsModal.classList.remove('hidden');
+                });
+                document.getElementById('btn-close-settings').addEventListener('click', () => {
+                    this.currentlyRecordingAction = null;
+                    settingsModal.classList.add('hidden');
+                });
+
+                // Cheatsheet Modal Controls
+                const cheatsheetModal = document.getElementById('cheatsheetModal');
+                document.getElementById('btn-cheatsheet').addEventListener('click', () => {
+                    this.populateCheatsheet();
+                    cheatsheetModal.classList.remove('hidden');
+                });
+                document.getElementById('btn-close-cheatsheet').addEventListener('click', () => cheatsheetModal.classList.add('hidden'));
+
+                document.getElementById('input-zoom-sens').addEventListener('input', (e) => {
+                    document.getElementById('val-zoom-sens').innerText = `${parseFloat(e.target.value).toFixed(1)}x`;
+                });
+                document.getElementById('input-pan-sens').addEventListener('input', (e) => {
+                    document.getElementById('val-pan-sens').innerText = `${parseFloat(e.target.value).toFixed(1)}x`;
+                });
+
+                document.getElementById('btn-save-settings').addEventListener('click', () => {
+                    this.sensitivity.zoom = parseFloat(document.getElementById('input-zoom-sens').value);
+                    this.sensitivity.pan = parseFloat(document.getElementById('input-pan-sens').value);
+                    this.saveSettingsToStorage();
+                    this.updateKeybindBadges();
+                    settingsModal.classList.add('hidden');
+                    this.showToast("Settings saved successfully");
+                });
+
+                document.getElementById('btn-reset-keybinds').addEventListener('click', () => {
+                    this.keybinds = { ...this.defaultKeybinds };
+                    this.currentlyRecordingAction = null;
+                    this.populateKeybindsGrid();
+                    this.updateKeybindBadges();
+                    this.showToast("Keybindings reset to default");
+                });
+            }
+
+            populateSettingsModal() {
+                document.getElementById('input-zoom-sens').value = this.sensitivity.zoom;
+                document.getElementById('val-zoom-sens').innerText = `${this.sensitivity.zoom.toFixed(1)}x`;
+                document.getElementById('input-pan-sens').value = this.sensitivity.pan;
+                document.getElementById('val-pan-sens').innerText = `${this.sensitivity.pan.toFixed(1)}x`;
+
+                this.populateKeybindsGrid();
+            }
+
+            populateKeybindsGrid() {
+                const container = document.getElementById('keybindingsGrid');
+                container.innerHTML = '';
+
+                // Detect conflicts
+                const keyCounts = {};
+                Object.values(this.keybinds).forEach(val => {
+                    keyCounts[val] = (keyCounts[val] || 0) + 1;
+                });
+
+                let hasConflict = false;
+
+                Object.keys(this.keybinds).forEach(action => {
+                    const bindValue = this.keybinds[action];
+                    const isConflict = keyCounts[bindValue] > 1;
+                    if (isConflict) hasConflict = true;
+
+                    const card = document.createElement('div');
+                    card.className = `flex items-center justify-between p-3 rounded-xl border ${isConflict ? 'border-amber-500/50 bg-amber-500/10' : 'border-slate-700/50 bg-slate-800/40'}`;
+
+                    const formattedActionName = action.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    const formattedBind = bindValue.split('+').map(part => part.toUpperCase()).join(' + ');
+
+                    const isRecordingThis = this.currentlyRecordingAction === action;
+
+                    card.innerHTML = `
+                        <div class="flex flex-col">
+                            <span class="text-xs font-semibold text-slate-200">${formattedActionName}</span>
+                            ${isConflict ? '<span class="text-[10px] text-amber-400">Hotkey Conflict!</span>' : ''}
+                        </div>
+                        <button data-action="${action}" class="btn-record-keybind px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${isRecordingThis ? 'bg-rose-600 text-white recording-pulse' : 'bg-slate-700 hover:bg-slate-600 text-blue-400 border border-slate-600'}">
+                            ${isRecordingThis ? 'Press key combo...' : formattedBind}
+                        </button>
+                    `;
+
+                    container.appendChild(card);
+
+                    const recordBtn = card.querySelector('.btn-record-keybind');
+                    recordBtn.addEventListener('click', () => {
+                        if (this.currentlyRecordingAction === action) {
+                            this.currentlyRecordingAction = null;
+                        } else {
+                            this.currentlyRecordingAction = action;
+                        }
+                        this.populateKeybindsGrid();
+                    });
+                });
+
+                const warningBox = document.getElementById('keybindConflictWarning');
+                if (hasConflict) warningBox.classList.remove('hidden');
+                else warningBox.classList.add('hidden');
+            }
+
+            populateCheatsheet() {
+                const list = document.getElementById('cheatsheetList');
+                list.innerHTML = '';
+
+                Object.keys(this.keybinds).forEach(action => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between p-2 rounded-lg bg-slate-800/40 text-xs';
+                    const name = action.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    const bind = this.keybinds[action].split('+').map(p => p.toUpperCase()).join(' + ');
+
+                    row.innerHTML = `
+                        <span class="text-slate-300 font-medium">${name}</span>
+                        <span class="font-mono bg-slate-900 px-2 py-1 rounded text-blue-400 font-bold border border-slate-700">${bind}</span>
+                    `;
+                    list.appendChild(row);
+                });
+            }
+
+            updateKeybindBadges() {
+                Object.keys(this.keybinds).forEach(action => {
+                    const badge = document.getElementById(`kb-badge-${action}`);
+                    if (badge) {
+                        const formatted = this.keybinds[action].split('+').map(p => p.toUpperCase()).join('+');
+                        badge.innerText = formatted;
+                    }
+                });
+            }
+
+            saveSettingsToStorage() {
+                localStorage.setItem('openboard_pro_settings', JSON.stringify({
+                    sensitivity: this.sensitivity,
+                    keybinds: this.keybinds
+                }));
+            }
+
+            loadSettingsFromStorage() {
+                const saved = localStorage.getItem('openboard_pro_settings');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        if (parsed.sensitivity) this.sensitivity = parsed.sensitivity;
+                        if (parsed.keybinds) this.keybinds = { ...this.defaultKeybinds, ...parsed.keybinds };
+                    } catch(e) {}
+                }
+            }
+
+            exportImage() {
+                const exportCanvas = document.createElement('canvas');
+                exportCanvas.width = this.canvas.width;
+                exportCanvas.height = this.canvas.height;
+                const exportCtx = exportCanvas.getContext('2d');
+
+                exportCtx.fillStyle = this.isDarkTheme ? '#121212' : '#ffffff';
+                exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+                exportCtx.drawImage(this.canvas, 0, 0);
+
+                const link = document.createElement('a');
+                link.download = `OpenBoard-${Date.now()}.png`;
+                link.href = exportCanvas.toDataURL('image/png');
+                link.click();
+                this.showToast("Exported PNG image");
+            }
+
+            exportJSON() {
+                const data = JSON.stringify(this.elements, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const link = document.createElement('a');
+                link.download = `OpenBoard-Backup-${Date.now()}.json`;
+                link.href = URL.createObjectURL(blob);
+                link.click();
+                this.showToast("Saved JSON backup");
+            }
+        }
+
+        // Initialize Whiteboard App on load
+        window.onload = () => {
+            window.whiteboard = new InfiniteWhiteboard();
+        };
+    </script>
+</body>
+</html>
